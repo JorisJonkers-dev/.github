@@ -11,9 +11,9 @@ on:
         description: "Project (v2) URL to add issues/PRs to"
         required: false
         type: string
-        # NOTE: this is a USER project (/users/...), not an org project (/orgs/...).
+        # NOTE: this is an ORG project (/orgs/...).
         # actions/add-to-project accepts either; confirm the App token can write it.
-        default: "https://github.com/users/ExtraToast/projects/1"
+        default: "https://github.com/orgs/JorisJonkers-dev/projects/1"
       labeled:
         description: "Comma-separated labels to filter on (empty = add everything)"
         required: false
@@ -52,7 +52,7 @@ jobs:
           private-key: ${{ secrets.app-private-key }}
           # owner must be the account that owns the Project so the token is
           # scoped to it rather than to the calling repository.
-          owner: ExtraToast
+          owner: JorisJonkers-dev
 
       - name: Add issue/PR to Planboard
         uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd  # v2.0.0

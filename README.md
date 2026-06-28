@@ -1,11 +1,11 @@
 # .github
 
-Org defaults for **ExtraToast**: reusable workflows, starter workflow
+Org defaults for **JorisJonkers-dev**: reusable workflows, starter workflow
 templates, and community-health files shared across every repository.
 
 ## Auto-add issues & PRs to the Planboard
 
-Every issue and pull request opened in an ExtraToast repo is automatically
+Every issue and pull request opened in a JorisJonkers-dev repo is automatically
 added to the shared Project (v2) board. The design has three independent
 levers:
 
@@ -26,7 +26,7 @@ any repo: issue/PR opened
         │ on: issues / pull_request
         ▼
   caller workflow (per repo)  ──workflow_call──▶  reusable workflow (.github)
-                                                    1. mint App token (owner: ExtraToast)
+                                                    1. mint App token (owner: JorisJonkers-dev)
                                                     2. actions/add-to-project
                                                           ▼
                                                   Planboard Project (v2)
@@ -49,11 +49,10 @@ visible to all repositories so callers can use `secrets: inherit`:
 - **Metadata: Read-only** — mandatory minimum.
 - Installed on **all repositories** so new repos are covered automatically.
 
-> The Planboard is currently a **user** project
-> (`https://github.com/users/ExtraToast/projects/1`). `actions/add-to-project`
-> accepts user project URLs; confirm the App token has rights to write a
-> user-owned Project v2 (this differs from the org-Projects path the original
-> plan assumed).
+> The Planboard is an **org** project
+> (`https://github.com/orgs/JorisJonkers-dev/projects/1`). `actions/add-to-project`
+> accepts org project URLs; confirm the App token has rights to write the
+> org-owned Project v2.
 
 ### Pinning
 
