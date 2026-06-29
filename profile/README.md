@@ -1,28 +1,19 @@
 # JorisJonkers-dev
 
-Source-available platform, auth, agent, and infrastructure projects by Joris
-Jonkers.
+Self-hosted platform and agent stack powering **[jorisjonkers.dev](https://jorisjonkers.dev)**.
+Source-available — © Joris Jonkers Both. All rights reserved.
 
-## Active Work
+### Platform & deploy
+- **deploy-config-schema** — typed deployment schema + compiler (Kubernetes / Traefik / VSO / Gatus / Flux)
+- **platform-blueprints** — reusable platform packs (edge, observability, NVIDIA, Flux core)
+- **nix-platform** — parameterized Nix modules & host profiles
+- **github-workflows** · **gradle-conventions** · **openapi-client-gradle** · **repo-template** — shared CI & scaffolding
 
-| Surface | Link |
-| --- | --- |
-| Org Planboard | [Project #2](https://github.com/orgs/JorisJonkers-dev/projects/2) |
-| Good first issues | [Open issues](https://github.com/search?q=org%3AJorisJonkers-dev+is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22&type=issues) |
-| Help wanted | [Open issues](https://github.com/search?q=org%3AJorisJonkers-dev+is%3Aissue+is%3Aopen+label%3A%22help+wanted%22&type=issues) |
+### Libraries
+- **kotlin-spring-commons** · **vue-web-commons** · **authz-model** · **api-contract-checks**
 
-## Areas
-
-- Agents: runtime, APIs, prompts, tools, and UI
-- Auth: identity, authorization, sessions, and SSO
-- Knowledge: recall, capture, curation, and knowledge vaults
-- Platform: deployment, cluster config, CI, and shared tooling
-- UI: Vue apps and shared web components
-
-## Operating Model
-
-Issues and pull requests are tracked on the org Planboard. Labels describe work
-type, area, component, priority, and status.
-
-Public source is available for viewing only. Use, copying, modification,
-redistribution, deployment, or reuse is not licensed.
+### Apps
+- **agents-api** · **agents-ui** — agent platform
+- **auth-api** · **auth-ui** — authentication
+- **knowledge** — knowledge base & MCP endpoint
+- **home-portal** — landing portal
