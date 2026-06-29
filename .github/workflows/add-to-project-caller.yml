@@ -18,4 +18,6 @@ permissions:
 jobs:
   add-to-project:
     uses: 'JorisJonkers-dev/github-workflows/.github/workflows/add-to-project.yml@main'
-    secrets: 'inherit'
+    secrets:
+      PROJECT_AUTOMATION_APP_ID: '${{ secrets.RELEASE_APP_ID }}'
+      PROJECT_AUTOMATION_APP_PRIVATE_KEY: '${{ secrets.RELEASE_APP_PRIVATE_KEY }}'
