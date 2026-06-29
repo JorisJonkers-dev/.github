@@ -1,0 +1,235 @@
+name: 'Project Board Admin'
+
+'on':
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Operation to run.'
+        required: true
+        default: 'verify'
+        type: 'choice'
+        options:
+          - 'verify'
+          - 'configure-fields'
+          - 'backfill'
+          - 'configure-and-backfill'
+
+permissions:
+  contents: 'read'
+
+concurrency:
+  group: 'project-board-admin'
+  cancel-in-progress: false
+
+jobs:
+  project-admin:
+    name: 'Project #2 admin'
+    runs-on: 'ubuntu-latest'
+    steps:
+      - name: 'Mint org-scoped App token'
+        id: 'app-token'
+        continue-on-error: true
+        uses: 'actions/create-github-app-token@v3'
+        with:
+          app-id: '${{ secrets.ORG_AUTOMATION_APP_ID }}'
+          private-key: '${{ secrets.ORG_AUTOMATION_APP_PRIVATE_KEY }}'
+          owner: 'JorisJonkers-dev'
+          permission-organization-projects: 'write'
+          permission-issues: 'read'
+          permission-pull-requests: 'read'
+
+      - name: 'Run project admin operation'
+        env:
+          GH_TOKEN: '${{ steps.app-token.outputs.token || secrets.ORG_PROJECT_PAT }}'
+          MODE: '${{ inputs.mode }}'
+          ORG: 'JorisJonkers-dev'
+          PROJECT_NUMBER: '2'
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN}" ]; then
+            echo 'Project #2 admin is owner-gated: configure ORG_AUTOMATION_APP_ID/ORG_AUTOMATION_APP_PRIVATE_KEY or ORG_PROJECT_PAT.'
+            exit 1
+          fi
+
+          # shellcheck disable=SC2016
+          project_id="$(
+            # shellcheck disable=SC2016
+            gh api graphql \
+              -F login="$ORG" \
+              -F number="$PROJECT_NUMBER" \
+              -f query='
+                query($login: String!, $number: Int!) {
+                  organization(login: $login) {
+                    projectV2(number: $number) { id title url }
+                  }
+                }' \
+              --jq '.data.organization.projectV2.id'
+          )"
+
+          if [ -z "$project_id" ] || [ "$project_id" = 'null' ]; then
+            echo 'Project #2 is not visible to this token. Stop: token is repo-scoped or org Projects permission is not active.'
+            exit 1
+          fi
+
+          echo "Project #2 id: $project_id"
+
+          configure_project_metadata() {
+            gh project edit "$PROJECT_NUMBER" \
+              --owner "$ORG" \
+              --title 'Org Planboard' \
+              --description 'Cross-repo execution board for migration, deploy-v2, maintenance, and follow-up work.' \
+              --visibility 'PRIVATE' \
+              --readme 'Org-wide execution board. Triage new work, drive active deploy-v2 and maintenance tasks, and archive completed closed work after 30 days.'
+          }
+
+          field_exists() {
+            gh project field-list "$PROJECT_NUMBER" --owner "$ORG" --limit 100 --format json |
+              jq -e --arg name "$1" '.fields[] | select(.name == $name)' >/dev/null
+          }
+
+          create_single_select_if_missing() {
+            local name="$1"
+            local options="$2"
+            if field_exists "$name"; then
+              echo "field exists: $name"
+              return
+            fi
+            gh project field-create "$PROJECT_NUMBER" \
+              --owner "$ORG" \
+              --name "$name" \
+              --data-type 'SINGLE_SELECT' \
+              --single-select-options "$options"
+          }
+
+          create_iteration_if_missing() {
+            if field_exists 'Iteration'; then
+              echo 'field exists: Iteration'
+              return
+            fi
+            # shellcheck disable=SC2016
+            gh api graphql \
+              -F projectId="$project_id" \
+              -f query='
+                mutation($projectId: ID!) {
+                  createProjectV2Field(input: {
+                    projectId: $projectId
+                    name: "Iteration"
+                    dataType: ITERATION
+                    iterationConfiguration: {
+                      startDate: "2026-06-29"
+                      duration: 14
+                      iterations: [
+                        { title: "2026-07A", startDate: "2026-06-29", duration: 14 }
+                        { title: "2026-07B", startDate: "2026-07-13", duration: 14 }
+                        { title: "2026-08A", startDate: "2026-07-27", duration: 14 }
+                        { title: "2026-08B", startDate: "2026-08-10", duration: 14 }
+                      ]
+                    }
+                  }) { projectV2Field { ... on ProjectV2FieldCommon { id name dataType } } }
+                }'
+          }
+
+          configure_fields() {
+            configure_project_metadata
+            create_single_select_if_missing 'Status' 'Triage,Todo,In Progress,In Review,Blocked,Done'
+            create_single_select_if_missing 'Priority' 'P0,P1,P2,P3'
+            create_single_select_if_missing 'Size' 'XS,S,M,L,XL'
+            create_single_select_if_missing 'Type' 'bug,feature,chore,docs,infra,refactor,test'
+            create_single_select_if_missing 'Area' 'agents,auth,knowledge,platform,deploy,tooling,ui,shared-libs'
+            create_iteration_if_missing
+          }
+
+          add_item() {
+            local content_id="$1"
+            local url="$2"
+            # shellcheck disable=SC2016
+            gh api graphql \
+              -F projectId="$project_id" \
+              -F contentId="$content_id" \
+              -f query='
+                mutation($projectId: ID!, $contentId: ID!) {
+                  addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                    item { id }
+                  }
+                }' >/dev/null
+            printf 'added-or-existing %s\n' "$url"
+          }
+
+          page_items() {
+            local repo="$1"
+            local kind="$2"
+            local cursor=''
+            local json
+            local jqbase
+            local query
+
+            while :; do
+              if [ "$kind" = 'issues' ]; then
+                jqbase='.data.repository.issues'
+                # shellcheck disable=SC2016
+                query='query($org: String!, $repo: String!, $cursor: String) {
+                  repository(owner: $org, name: $repo) {
+                    issues(first: 100, after: $cursor, states: OPEN) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes { id url }
+                    }
+                  }
+                }'
+              else
+                jqbase='.data.repository.pullRequests'
+                # shellcheck disable=SC2016
+                query='query($org: String!, $repo: String!, $cursor: String) {
+                  repository(owner: $org, name: $repo) {
+                    pullRequests(first: 100, after: $cursor, states: OPEN) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes { id url }
+                    }
+                  }
+                }'
+              fi
+
+              args=(-F org="$ORG" -F repo="$repo" -f query="$query")
+              if [ -n "$cursor" ]; then
+                args+=(-F cursor="$cursor")
+              fi
+
+              json="$(gh api graphql "${args[@]}")"
+              jq -r "$jqbase.nodes[] | [.id, .url] | @tsv" <<<"$json" |
+                while IFS=$'\t' read -r id url; do
+                  add_item "$id" "$url"
+                done
+
+              [ "$(jq -r "$jqbase.pageInfo.hasNextPage" <<<"$json")" = 'true' ] || break
+              cursor="$(jq -r "$jqbase.pageInfo.endCursor // empty" <<<"$json")"
+            done
+          }
+
+          backfill_open_items() {
+            gh repo list "$ORG" --limit 300 --json name,isArchived,isFork \
+              --jq '.[] | select(.isArchived == false and .isFork == false) | .name' |
+              while read -r repo; do
+                page_items "$repo" 'issues'
+                page_items "$repo" 'pullRequests'
+              done
+          }
+
+          case "$MODE" in
+            verify)
+              gh project field-list "$PROJECT_NUMBER" --owner "$ORG"
+              ;;
+            configure-fields)
+              configure_fields
+              ;;
+            backfill)
+              backfill_open_items
+              ;;
+            configure-and-backfill)
+              configure_fields
+              backfill_open_items
+              ;;
+            *)
+              echo "unknown mode: $MODE"
+              exit 2
+              ;;
+          esac
