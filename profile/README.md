@@ -1,4 +1,4 @@
-# JorisJonkers-dev
+# JorisJonkers.dev
 
 Source-available platform, auth, agent, and infrastructure projects by Joris
 Jonkers.
