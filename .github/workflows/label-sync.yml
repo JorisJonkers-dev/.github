@@ -1,0 +1,164 @@
+name: 'Org Label Sync'
+
+'on':
+  push:
+    branches:
+      - 'main'
+    paths:
+      - 'labels.yml'
+      - '.github/workflows/label-sync.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Print intended changes without modifying labels.'
+        required: false
+        default: true
+        type: 'boolean'
+
+permissions:
+  contents: 'read'
+
+concurrency:
+  group: 'org-label-sync'
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    name: 'Discover repositories'
+    runs-on: 'ubuntu-latest'
+    outputs:
+      repos: '${{ steps.repos.outputs.repos }}'
+    steps:
+      - name: 'Mint org app token'
+        id: 'app-token'
+        uses: 'actions/create-github-app-token@v3'
+        with:
+          app-id: '${{ secrets.ORG_AUTOMATION_APP_ID }}'
+          private-key: '${{ secrets.ORG_AUTOMATION_APP_PRIVATE_KEY }}'
+          owner: 'JorisJonkers-dev'
+          permission-issues: 'write'
+
+      - name: 'List active repositories'
+        id: 'repos'
+        env:
+          GH_TOKEN: '${{ steps.app-token.outputs.token }}'
+          ORG: 'JorisJonkers-dev'
+        run: |
+          set -euo pipefail
+          repos="$(
+            gh repo list "$ORG" \
+              --limit 300 \
+              --json name,isArchived,isFork \
+              --jq '[.[] | select(.isArchived == false and .isFork == false) | .name]'
+          )"
+          compact="$(jq -c . <<<"$repos")"
+          printf 'repos=%s\n' "$compact" >>"$GITHUB_OUTPUT"
+
+  sync:
+    name: 'Sync labels / ${{ matrix.repo }}'
+    needs:
+      - 'discover'
+    runs-on: 'ubuntu-latest'
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: ${{ fromJSON(needs.discover.outputs.repos) }}
+    steps:
+      - name: 'Checkout label source'
+        uses: 'actions/checkout@v7'
+        with:
+          sparse-checkout: 'labels.yml'
+
+      - name: 'Mint repo app token'
+        id: 'app-token'
+        uses: 'actions/create-github-app-token@v3'
+        with:
+          app-id: '${{ secrets.ORG_AUTOMATION_APP_ID }}'
+          private-key: '${{ secrets.ORG_AUTOMATION_APP_PRIVATE_KEY }}'
+          owner: 'JorisJonkers-dev'
+          repositories: '${{ matrix.repo }}'
+          permission-issues: 'write'
+
+      - name: 'Apply labels additively'
+        env:
+          GH_TOKEN: '${{ steps.app-token.outputs.token }}'
+          ORG: 'JorisJonkers-dev'
+          REPO: '${{ matrix.repo }}'
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        run: |
+          ruby <<'RUBY'
+          require 'json'
+          require 'shellwords'
+          require 'yaml'
+
+          org = ENV.fetch('ORG')
+          repo = ENV.fetch('REPO')
+          dry_run = ENV.fetch('DRY_RUN', 'false') == 'true'
+          full_repo = "#{org}/#{repo}"
+
+          labels = YAML.safe_load_file('labels.yml')
+          existing = JSON.parse(
+            `gh label list --repo #{Shellwords.escape(full_repo)} --limit 1000 --json name,color,description`
+          )
+          existing_names = existing.map { |label| label.fetch('name') }
+
+          aliases = {
+            'bug' => 'type: bug',
+            'enhancement' => 'type: feature',
+            'documentation' => 'type: docs',
+            'question' => 'status: needs-info',
+            'duplicate' => 'status: duplicate',
+            'invalid' => 'status: declined',
+            'wontfix' => 'status: declined'
+          }
+
+          def run_cmd(dry_run, *args)
+            if dry_run
+              puts '+ ' + Shellwords.join(args)
+              return
+            end
+            system(*args) || abort('failed: ' + Shellwords.join(args))
+          end
+
+          labels.each do |label|
+            name = label.fetch('name')
+            color = label.fetch('color').delete_prefix('#')
+            description = label.fetch('description')
+
+            unless existing_names.include?(name)
+              alias_name = aliases.find { |old_name, new_name| new_name == name && existing_names.include?(old_name) }&.first
+              if alias_name
+                run_cmd(
+                  dry_run,
+                  'gh', 'label', 'edit', alias_name,
+                  '--repo', full_repo,
+                  '--name', name,
+                  '--color', color,
+                  '--description', description
+                )
+                existing_names.delete(alias_name)
+                existing_names << name
+                next
+              end
+            end
+
+            if existing_names.include?(name)
+              run_cmd(
+                dry_run,
+                'gh', 'label', 'edit', name,
+                '--repo', full_repo,
+                '--color', color,
+                '--description', description
+              )
+            else
+              run_cmd(
+                dry_run,
+                'gh', 'label', 'create', name,
+                '--repo', full_repo,
+                '--color', color,
+                '--description', description
+              )
+              existing_names << name
+            end
+          end
+          RUBY
