@@ -58,6 +58,7 @@ jobs:
         env:
           GH_TOKEN: '${{ steps.app-token.outputs.token }}'
         run: |
+          # shellcheck disable=SC2016
           set -euo pipefail
 
           gql() {
