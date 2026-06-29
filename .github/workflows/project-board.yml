@@ -214,7 +214,6 @@ jobs:
                 shortDescription: $shortDescription
                 readme: $readme
                 closed: false
-                public: false
               }) {
                 projectV2 { id title url }
               }
