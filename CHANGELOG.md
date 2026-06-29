@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/JorisJonkers-dev/.github/compare/v0.2.2...v0.2.3) (2026-06-29)
+
+
+### Bug Fixes
+
+* **ci:** tolerate reserved project field names ([275a9cf](https://github.com/JorisJonkers-dev/.github/commit/275a9cfab01c164edc87e428f100000abd8fe2bd))
+
 ## [0.2.2](https://github.com/JorisJonkers-dev/.github/compare/v0.2.1...v0.2.2) (2026-06-29)
 
 
