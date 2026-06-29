@@ -288,8 +288,9 @@ jobs:
           create_field() {
             local name="$1"
             local options="$2"
+            local create_json
             options="$(json_array_or "$options")"
-            gql '
+            if ! create_json="$(gql '
               mutation($projectId: ID!, $name: String!, $options: [ProjectV2SingleSelectFieldOptionInput!]) {
                 createProjectV2Field(input: {
                   projectId: $projectId
@@ -301,7 +302,14 @@ jobs:
                     ... on ProjectV2SingleSelectField { id name dataType options { id name color description } }
                   }
                 }
-              }' "$(jq -nc --arg projectId "$PROJECT_ID" --arg name "$name" --argjson options "$options" '{projectId: $projectId, name: $name, options: $options}')" >/dev/null
+              }' "$(jq -nc --arg projectId "$PROJECT_ID" --arg name "$name" --argjson options "$options" '{projectId: $projectId, name: $name, options: $options}')" 2>&1)"; then
+              if grep -Eq 'Name cannot have a reserved value|Name has already been taken' <<<"$create_json"; then
+                echo "::warning::Field '$name' was not created because GitHub reports the name is reserved or already taken."
+                return 0
+              fi
+              printf '%s\n' "$create_json" >&2
+              return 1
+            fi
           }
 
           update_field() {
