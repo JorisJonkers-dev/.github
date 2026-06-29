@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/JorisJonkers-dev/.github/compare/v0.2.0...v0.2.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* **ci:** harden project board jq json args ([#8](https://github.com/JorisJonkers-dev/.github/issues/8)) ([5d7235a](https://github.com/JorisJonkers-dev/.github/commit/5d7235a3ff6f7da3ad1cfe8a9f321bba1c734a55))
+
 ## [0.2.0](https://github.com/JorisJonkers-dev/.github/compare/v0.1.0...v0.2.0) (2026-06-29)
 
 
