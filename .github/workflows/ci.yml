@@ -37,6 +37,8 @@ jobs:
           sudo install /tmp/actionlint /usr/local/bin/actionlint
 
       - name: Lint workflows
+        env:
+          SHELLCHECK_OPTS: '--exclude=SC2016'
         run: actionlint .github/workflows/*.yml
 
   yaml-validity:

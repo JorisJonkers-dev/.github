@@ -1,0 +1,546 @@
+name: 'Project Board'
+
+'on':
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Print backfill mutations without adding or updating items.'
+        required: true
+        type: 'choice'
+        default: 'false'
+        options:
+          - 'false'
+          - 'true'
+      delete_legacy_fields:
+        description: 'Delete comma-separated legacy fields after canonical fields are ensured.'
+        required: true
+        type: 'choice'
+        default: 'false'
+        options:
+          - 'false'
+          - 'true'
+      legacy_fields_to_delete:
+        description: 'Comma-separated non-canonical custom field names to delete when delete_legacy_fields is true.'
+        required: false
+        type: 'string'
+        default: ''
+
+permissions:
+  contents: 'read'
+
+concurrency:
+  group: 'project-board-admin'
+  cancel-in-progress: false
+
+jobs:
+  setup-and-backfill:
+    name: 'Setup Project #2 and backfill open items'
+    runs-on: 'ubuntu-latest'
+    env:
+      ORG: 'JorisJonkers-dev'
+      PROJECT_NUMBER: '2'
+      DRY_RUN: '${{ inputs.dry_run }}'
+      DELETE_LEGACY_FIELDS: '${{ inputs.delete_legacy_fields }}'
+      LEGACY_FIELDS_TO_DELETE: '${{ inputs.legacy_fields_to_delete }}'
+    steps:
+      - name: 'Mint org-scoped Project token'
+        id: 'app-token'
+        uses: 'actions/create-github-app-token@v3'
+        with:
+          app-id: '${{ secrets.RELEASE_APP_ID }}'
+          private-key: '${{ secrets.RELEASE_APP_PRIVATE_KEY }}'
+          owner: 'JorisJonkers-dev'
+          permission-organization-projects: 'write'
+          permission-issues: 'read'
+          permission-pull-requests: 'read'
+
+      - name: 'Build board and backfill issues and pull requests'
+        env:
+          GH_TOKEN: '${{ steps.app-token.outputs.token }}'
+        run: |
+          # shellcheck disable=SC2016
+          set -euo pipefail
+
+          gql() {
+            local query="$1"
+            local variables="${2:-{}}"
+            jq -nc --arg query "$query" --argjson variables "$variables" '{query: $query, variables: $variables}' |
+              gh api graphql --input -
+          }
+
+          DESIRED_FIELDS="$(jq -c . <<'JSON'
+          {
+            "Status": {
+              "aliases": ["Column", "Phase", "State"],
+              "options": [
+                {"name": "Backlog", "color": "BLUE", "description": "Captured but not ready", "aliases": ["Inbox", "New", "Triage", "Needs triage", "Icebox"]},
+                {"name": "Ready", "color": "GREEN", "description": "Agent-ready work", "aliases": ["Todo", "To do", "TODO", "Planned", "Next"]},
+                {"name": "In Progress", "color": "YELLOW", "description": "Actively being worked", "aliases": ["Active", "Doing"]},
+                {"name": "In Review", "color": "PURPLE", "description": "PR, CI, review, or verification", "aliases": ["Review", "PR Review", "Needs review", "Validate"]},
+                {"name": "Blocked", "color": "RED", "description": "Cannot progress", "aliases": ["Waiting", "On Hold"]},
+                {"name": "Done", "color": "GRAY", "description": "Closed, merged, or completed", "aliases": ["Closed", "Merged", "Complete", "Completed"]}
+              ]
+            },
+            "Type": {
+              "aliases": ["Work Type", "Work type", "Kind", "Issue Type"],
+              "options": [
+                {"name": "Feature", "color": "BLUE", "description": "User-visible capability"},
+                {"name": "Bug", "color": "RED", "description": "Defect or regression"},
+                {"name": "Chore", "color": "GRAY", "description": "Maintenance task"},
+                {"name": "Docs", "color": "GREEN", "description": "Documentation"},
+                {"name": "Security", "color": "RED", "description": "Security-sensitive work"},
+                {"name": "Dependency", "color": "PURPLE", "description": "Dependency update"},
+                {"name": "Release", "color": "YELLOW", "description": "Release work"},
+                {"name": "Spike", "color": "ORANGE", "description": "Investigation"}
+              ]
+            },
+            "Area": {
+              "aliases": ["Component", "Repo Area", "Domain", "Service"],
+              "options": [
+                {"name": "Agents", "color": "PURPLE", "description": "Agent runtime, orchestration, UI/API"},
+                {"name": "Auth", "color": "RED", "description": "Authentication and authorization"},
+                {"name": "UI", "color": "BLUE", "description": "Frontend applications and components"},
+                {"name": "Platform", "color": "GREEN", "description": "Platform, deployment, and cluster"},
+                {"name": "CI/CD", "color": "YELLOW", "description": "GitHub Actions and release flow"},
+                {"name": "Docs", "color": "GRAY", "description": "Documentation"},
+                {"name": "Data/KB", "color": "ORANGE", "description": "Knowledge base and data workflows"},
+                {"name": "Infra", "color": "RED", "description": "Infrastructure operations"},
+                {"name": "Shared Libraries", "color": "PURPLE", "description": "Reusable libraries and conventions"}
+              ]
+            },
+            "Priority": {
+              "aliases": ["Rank", "Severity"],
+              "options": [
+                {"name": "P0", "color": "RED", "description": "Immediate and blocking"},
+                {"name": "P1", "color": "ORANGE", "description": "High priority"},
+                {"name": "P2", "color": "YELLOW", "description": "Normal priority"},
+                {"name": "P3", "color": "GRAY", "description": "Low priority"}
+              ]
+            },
+            "Size": {
+              "aliases": ["Estimate", "Effort", "Points"],
+              "options": [
+                {"name": "XS", "color": "GREEN", "description": "Trivial"},
+                {"name": "S", "color": "BLUE", "description": "Small"},
+                {"name": "M", "color": "YELLOW", "description": "Medium"},
+                {"name": "L", "color": "ORANGE", "description": "Large"},
+                {"name": "XL", "color": "RED", "description": "Split before starting"}
+              ]
+            },
+            "Agent": {
+              "aliases": ["Owner", "Driver", "Implementer"],
+              "options": [
+                {"name": "Unassigned", "color": "GRAY", "description": "No owner yet"},
+                {"name": "Codex", "color": "GREEN", "description": "Codex-owned"},
+                {"name": "Claude", "color": "PURPLE", "description": "Claude-owned"},
+                {"name": "Human", "color": "BLUE", "description": "Human-owned"},
+                {"name": "Mixed", "color": "YELLOW", "description": "Multiple owners"}
+              ]
+            },
+            "Blocked Reason": {
+              "aliases": ["Blocked-reason", "Blocked reason", "Blocker"],
+              "options": [
+                {"name": "None", "color": "GRAY", "description": "Not blocked"},
+                {"name": "Waiting on Human", "color": "YELLOW", "description": "Needs operator input"},
+                {"name": "Waiting on CI", "color": "ORANGE", "description": "CI, build, or release blocked"},
+                {"name": "Waiting on Review", "color": "PURPLE", "description": "Needs review"},
+                {"name": "Needs Secret/Permission", "color": "RED", "description": "Needs credential or permission change"},
+                {"name": "Needs Design", "color": "BLUE", "description": "Needs design or decision"},
+                {"name": "Upstream/Dependency", "color": "RED", "description": "Blocked by upstream dependency"}
+              ]
+            }
+          }
+          JSON
+          )"
+
+          FIELD_NAMES=("Status" "Type" "Area" "Priority" "Size" "Agent" "Blocked Reason")
+
+          project_vars="$(jq -nc --arg owner "$ORG" --argjson number "$PROJECT_NUMBER" '{owner: $owner, number: $number}')"
+          project_json="$(
+            gql '
+              query($owner: String!, $number: Int!) {
+                organization(login: $owner) {
+                  projectV2(number: $number) {
+                    id
+                    title
+                    url
+                  }
+                }
+              }' "$project_vars"
+          )"
+          PROJECT_ID="$(jq -r '.data.organization.projectV2.id // empty' <<<"$project_json")"
+          PROJECT_URL="$(jq -r '.data.organization.projectV2.url // empty' <<<"$project_json")"
+          if [ -z "$PROJECT_ID" ]; then
+            echo "::error::Project #$PROJECT_NUMBER is not visible to the minted token."
+            exit 1
+          fi
+
+          gql '
+            mutation($projectId: ID!, $title: String!, $shortDescription: String!, $readme: String!) {
+              updateProjectV2(input: {
+                projectId: $projectId
+                title: $title
+                shortDescription: $shortDescription
+                readme: $readme
+                closed: false
+                public: false
+              }) {
+                projectV2 { id title url }
+              }
+            }' "$(jq -nc \
+              --arg projectId "$PROJECT_ID" \
+              --arg title 'AI Dev Kanban' \
+              --arg shortDescription 'Org-wide AI-agent kanban for issues and pull requests.' \
+              --arg readme 'Pure kanban for AI-agent-driven development. New issues land in Backlog, agents pull from Ready, active work moves through In Progress and In Review, blockers use Blocked with a reason, and completed work moves to Done.' \
+              '{projectId: $projectId, title: $title, shortDescription: $shortDescription, readme: $readme}')" >/dev/null
+
+          fetch_fields() {
+            local cursor_json='null'
+            local out='[]'
+            local page
+            while :; do
+              page="$(
+                gql '
+                  query($id: ID!, $after: String) {
+                    node(id: $id) {
+                      ... on ProjectV2 {
+                        fields(first: 100, after: $after, orderBy: { field: POSITION, direction: ASC }) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes {
+                            __typename
+                            ... on ProjectV2Field { id name dataType }
+                            ... on ProjectV2IterationField { id name dataType }
+                            ... on ProjectV2SingleSelectField {
+                              id
+                              name
+                              dataType
+                              options { id name color description }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }' "$(jq -nc --arg id "$PROJECT_ID" --argjson after "$cursor_json" '{id: $id, after: $after}')"
+              )"
+              out="$(jq -c --argjson out "$out" '$out + (.data.node.fields.nodes // [])' <<<"$page")"
+              if [ "$(jq -r '.data.node.fields.pageInfo.hasNextPage' <<<"$page")" != 'true' ]; then
+                break
+              fi
+              cursor_json="$(jq -c '.data.node.fields.pageInfo.endCursor' <<<"$page")"
+            done
+            printf '%s\n' "$out"
+          }
+
+          find_field() {
+            local name="$1"
+            jq -c --arg name "$name" --argjson desired "$DESIRED_FIELDS" '
+              ($desired[$name].aliases // []) as $aliases |
+              ([$name] + $aliases | map(ascii_downcase)) as $names |
+              ([.[] as $f | select($f.name == $name) | $f][0]) //
+              ([.[] as $f | select($names | index($f.name | ascii_downcase)) | $f][0]) //
+              empty
+            ' <<<"$FIELDS"
+          }
+
+          make_options() {
+            local name="$1"
+            local existing="${2:-null}"
+            jq -c --arg name "$name" --argjson existing "$existing" '
+              .[$name].options | map(. as $desired |
+                ([$desired.name] + ($desired.aliases // []) | map(ascii_downcase)) as $names |
+                ([($existing.options // [])[]? as $option | select($names | index($option.name | ascii_downcase)) | $option][0]) as $match |
+                {name: $desired.name, color: $desired.color, description: ($desired.description // "")}
+                + (if ($match // null) == null then {} else {id: $match.id} end)
+              )
+            ' <<<"$DESIRED_FIELDS"
+          }
+
+          create_field() {
+            local name="$1"
+            local options="$2"
+            gql '
+              mutation($projectId: ID!, $name: String!, $options: [ProjectV2SingleSelectFieldOptionInput!]) {
+                createProjectV2Field(input: {
+                  projectId: $projectId
+                  name: $name
+                  dataType: SINGLE_SELECT
+                  singleSelectOptions: $options
+                }) {
+                  projectV2Field {
+                    ... on ProjectV2SingleSelectField { id name dataType options { id name color description } }
+                  }
+                }
+              }' "$(jq -nc --arg projectId "$PROJECT_ID" --arg name "$name" --argjson options "$options" '{projectId: $projectId, name: $name, options: $options}')" >/dev/null
+          }
+
+          update_field() {
+            local field_id="$1"
+            local name="$2"
+            local options="$3"
+            gql '
+              mutation($fieldId: ID!, $name: String!, $options: [ProjectV2SingleSelectFieldOptionInput!]) {
+                updateProjectV2Field(input: {
+                  fieldId: $fieldId
+                  name: $name
+                  singleSelectOptions: $options
+                }) {
+                  projectV2Field {
+                    ... on ProjectV2SingleSelectField { id name dataType options { id name color description } }
+                  }
+                }
+              }' "$(jq -nc --arg fieldId "$field_id" --arg name "$name" --argjson options "$options" '{fieldId: $fieldId, name: $name, options: $options}')" >/dev/null
+          }
+
+          delete_field() {
+            local field_id="$1"
+            gql '
+              mutation($fieldId: ID!) {
+                deleteProjectV2Field(input: { fieldId: $fieldId }) {
+                  projectV2Field { __typename }
+                }
+              }' "$(jq -nc --arg fieldId "$field_id" '{fieldId: $fieldId}')" >/dev/null
+          }
+
+          FIELDS="$(fetch_fields)"
+          for name in "${FIELD_NAMES[@]}"; do
+            existing="$(find_field "$name" || true)"
+            if [ -z "${existing:-}" ] || [ "$existing" = 'null' ]; then
+              echo "Creating field: $name"
+              create_field "$name" "$(make_options "$name" null)"
+            else
+              field_type="$(jq -r '.dataType // empty' <<<"$existing")"
+              if [ "$field_type" != 'SINGLE_SELECT' ]; then
+                echo "::warning::Field '$name' exists but is $field_type, not SINGLE_SELECT. Delete or rename it manually, then rerun."
+                continue
+              fi
+              echo "Ensuring field and options: $name"
+              update_field "$(jq -r '.id' <<<"$existing")" "$name" "$(make_options "$name" "$existing")"
+            fi
+            FIELDS="$(fetch_fields)"
+          done
+
+          if [ "$DELETE_LEGACY_FIELDS" = 'true' ] && [ -n "$LEGACY_FIELDS_TO_DELETE" ]; then
+            canonical_csv=",Status,Type,Area,Priority,Size,Agent,Blocked Reason,"
+            IFS=',' read -ra legacy_names <<<"$LEGACY_FIELDS_TO_DELETE"
+            for legacy in "${legacy_names[@]}"; do
+              legacy="$(xargs <<<"$legacy")"
+              [ -n "$legacy" ] || continue
+              if [[ "$canonical_csv" == *",$legacy,"* ]]; then
+                echo "::warning::Refusing to delete canonical field '$legacy'."
+                continue
+              fi
+              candidate="$(jq -c --arg name "$legacy" '[.[] as $f | select(($f.name | ascii_downcase) == ($name | ascii_downcase)) | $f][0] // empty' <<<"$FIELDS")"
+              if [ -n "${candidate:-}" ] && [ "$candidate" != 'null' ]; then
+                echo "Deleting allowlisted legacy field: $legacy"
+                delete_field "$(jq -r '.id' <<<"$candidate")"
+                FIELDS="$(fetch_fields)"
+              else
+                echo "Legacy field not present: $legacy"
+              fi
+            done
+          fi
+
+          fetch_views() {
+            local cursor_json='null'
+            local out='[]'
+            local page
+            while :; do
+              page="$(
+                gql '
+                  query($id: ID!, $after: String) {
+                    node(id: $id) {
+                      ... on ProjectV2 {
+                        views(first: 100, after: $after, orderBy: { field: POSITION, direction: ASC }) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes {
+                            id
+                            number
+                            name
+                            layout
+                            filter
+                            groupByFields(first: 10) {
+                              nodes {
+                                __typename
+                                ... on ProjectV2FieldCommon { id name }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }' "$(jq -nc --arg id "$PROJECT_ID" --argjson after "$cursor_json" '{id: $id, after: $after}')"
+              )"
+              out="$(jq -c --argjson out "$out" '$out + (.data.node.views.nodes // [])' <<<"$page")"
+              if [ "$(jq -r '.data.node.views.pageInfo.hasNextPage' <<<"$page")" != 'true' ]; then
+                break
+              fi
+              cursor_json="$(jq -c '.data.node.views.pageInfo.endCursor' <<<"$page")"
+            done
+            printf '%s\n' "$out"
+          }
+
+          VIEWS="$(fetch_views)"
+          for required_view in 'AI Kanban' 'Backlog' 'Current' 'Blocked' 'Agent'; do
+            if ! jq -e --arg name "$required_view" '.[] | select(.name == $name)' <<<"$VIEWS" >/dev/null; then
+              echo "::warning::View '$required_view' is missing. Create or update views in the GitHub UI; public GraphQL has no ProjectV2 view mutation."
+            fi
+          done
+
+          item_count() {
+            gql '
+              query($projectId: ID!) {
+                node(id: $projectId) {
+                  ... on ProjectV2 {
+                    items(first: 1) { totalCount }
+                  }
+                }
+              }' "$(jq -nc --arg projectId "$PROJECT_ID" '{projectId: $projectId}')" |
+              jq -r '.data.node.items.totalCount'
+          }
+
+          FIELDS="$(fetch_fields)"
+          status_field_id="$(jq -r '.[] | select(.name == "Status") | .id' <<<"$FIELDS")"
+          backlog_option_id="$(jq -r '.[] | select(.name == "Status") | .options[] | select(.name == "Backlog") | .id' <<<"$FIELDS")"
+          review_option_id="$(jq -r '.[] | select(.name == "Status") | .options[] | select(.name == "In Review") | .id' <<<"$FIELDS")"
+          if [ -z "$status_field_id" ] || [ -z "$backlog_option_id" ] || [ -z "$review_option_id" ]; then
+            echo '::error::Status field must contain Backlog and In Review before backfill.'
+            exit 1
+          fi
+
+          find_existing_item() {
+            local content_id="$1"
+            gql '
+              query($contentId: ID!, $projectId: ID!) {
+                node(id: $contentId) {
+                  ... on Issue {
+                    projectItems(first: 50) {
+                      nodes { id project { id } }
+                    }
+                  }
+                  ... on PullRequest {
+                    projectItems(first: 50) {
+                      nodes { id project { id } }
+                    }
+                  }
+                }
+              }' "$(jq -nc --arg contentId "$content_id" --arg projectId "$PROJECT_ID" '{contentId: $contentId, projectId: $projectId}')" |
+              jq -r --arg projectId "$PROJECT_ID" '.data.node.projectItems.nodes[]? | select(.project.id == $projectId) | .id' |
+              head -n 1
+          }
+
+          add_and_set_status() {
+            local content_id="$1"
+            local url="$2"
+            local status_name="$3"
+            local option_id="$4"
+
+            processed=$((processed + 1))
+            if [ "$DRY_RUN" = 'true' ]; then
+              echo "would-add status=$status_name url=$url"
+              return
+            fi
+
+            item_id="$(find_existing_item "$content_id")"
+            if [ -z "$item_id" ]; then
+              add_json="$(
+                gql '
+                  mutation($projectId: ID!, $contentId: ID!) {
+                    addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                      item { id }
+                    }
+                  }' "$(jq -nc --arg projectId "$PROJECT_ID" --arg contentId "$content_id" '{projectId: $projectId, contentId: $contentId}')"
+              )"
+              item_id="$(jq -r '.data.addProjectV2ItemById.item.id // empty' <<<"$add_json")"
+            fi
+
+            if [ -z "$item_id" ]; then
+              echo "::warning::Could not add or find project item for $url"
+              return
+            fi
+
+            gql '
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId
+                  itemId: $itemId
+                  fieldId: $fieldId
+                  value: { singleSelectOptionId: $optionId }
+                }) {
+                  projectV2Item { id }
+                }
+              }' "$(jq -nc --arg projectId "$PROJECT_ID" --arg itemId "$item_id" --arg fieldId "$status_field_id" --arg optionId "$option_id" '{projectId: $projectId, itemId: $itemId, fieldId: $fieldId, optionId: $optionId}')" >/dev/null
+
+            echo "added-or-existing status=$status_name url=$url"
+          }
+
+          page_items() {
+            local repo="$1"
+            local kind="$2"
+            local status_name="$3"
+            local option_id="$4"
+            local cursor_json='null'
+            local json
+
+            while :; do
+              if [ "$kind" = 'issues' ]; then
+                json="$(
+                  gql '
+                    query($org: String!, $repo: String!, $after: String) {
+                      repository(owner: $org, name: $repo) {
+                        issues(first: 100, after: $after, states: OPEN) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes { id url }
+                        }
+                      }
+                    }' "$(jq -nc --arg org "$ORG" --arg repo "$repo" --argjson after "$cursor_json" '{org: $org, repo: $repo, after: $after}')"
+                )"
+                while IFS=$'\t' read -r id url; do
+                  [ -n "$id" ] || continue
+                  add_and_set_status "$id" "$url" "$status_name" "$option_id"
+                done < <(jq -r '.data.repository.issues.nodes[]? | [.id, .url] | @tsv' <<<"$json")
+                if [ "$(jq -r '.data.repository.issues.pageInfo.hasNextPage' <<<"$json")" != 'true' ]; then
+                  break
+                fi
+                cursor_json="$(jq -c '.data.repository.issues.pageInfo.endCursor' <<<"$json")"
+              else
+                json="$(
+                  gql '
+                    query($org: String!, $repo: String!, $after: String) {
+                      repository(owner: $org, name: $repo) {
+                        pullRequests(first: 100, after: $after, states: OPEN) {
+                          pageInfo { hasNextPage endCursor }
+                          nodes { id url }
+                        }
+                      }
+                    }' "$(jq -nc --arg org "$ORG" --arg repo "$repo" --argjson after "$cursor_json" '{org: $org, repo: $repo, after: $after}')"
+                )"
+                while IFS=$'\t' read -r id url; do
+                  [ -n "$id" ] || continue
+                  add_and_set_status "$id" "$url" "$status_name" "$option_id"
+                done < <(jq -r '.data.repository.pullRequests.nodes[]? | [.id, .url] | @tsv' <<<"$json")
+                if [ "$(jq -r '.data.repository.pullRequests.pageInfo.hasNextPage' <<<"$json")" != 'true' ]; then
+                  break
+                fi
+                cursor_json="$(jq -c '.data.repository.pullRequests.pageInfo.endCursor' <<<"$json")"
+              fi
+            done
+          }
+
+          before_count="$(item_count)"
+          echo "Project: $PROJECT_URL"
+          echo "Project item count before: $before_count"
+
+          processed=0
+          while read -r repo; do
+            [ -n "$repo" ] || continue
+            echo "repo=$repo"
+            page_items "$repo" 'issues' 'Backlog' "$backlog_option_id"
+            page_items "$repo" 'pullRequests' 'In Review' "$review_option_id"
+          done < <(gh repo list "$ORG" --limit 1000 --json name --jq '.[].name')
+
+          after_count="$(item_count)"
+          echo "Processed open issue/PR rows: $processed"
+          echo "Project item count after: $after_count"
+          if [ "$DRY_RUN" = 'true' ]; then
+            echo 'Dry run completed without mutating project items.'
+          fi
