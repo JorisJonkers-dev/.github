@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/JorisJonkers-dev/.github/compare/v0.2.1...v0.2.2) (2026-06-29)
+
+
+### Bug Fixes
+
+* **ci:** harden project board automation ([#10](https://github.com/JorisJonkers-dev/.github/issues/10)) ([553b4cb](https://github.com/JorisJonkers-dev/.github/commit/553b4cbe95eb1e82af079bbf53a87215e851ac3d))
+
 ## [0.2.1](https://github.com/JorisJonkers-dev/.github/compare/v0.2.0...v0.2.1) (2026-06-29)
 
 
