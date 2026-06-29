@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/JorisJonkers-dev/.github/compare/v0.2.3...v0.2.4) (2026-06-29)
+
+
+### Bug Fixes
+
+* **ci:** remove unused project board graphql variable ([124c6b7](https://github.com/JorisJonkers-dev/.github/commit/124c6b717f4cd68bb7ed024ff4ad1297d52a3d48))
+
 ## [0.2.3](https://github.com/JorisJonkers-dev/.github/compare/v0.2.2...v0.2.3) (2026-06-29)
 
 
