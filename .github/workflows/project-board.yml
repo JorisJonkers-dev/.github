@@ -61,9 +61,40 @@ jobs:
           # shellcheck disable=SC2016
           set -euo pipefail
 
+          json_or() {
+            local value="${1:-}"
+            local fallback="$2"
+            if [ -n "$value" ] && jq -e . >/dev/null 2>&1 <<<"$value"; then
+              jq -c . <<<"$value"
+            else
+              printf '%s\n' "$fallback"
+            fi
+          }
+
+          json_object_or() {
+            local value
+            value="$(json_or "${1:-}" '{}')"
+            if jq -e 'type == "object"' >/dev/null 2>&1 <<<"$value"; then
+              printf '%s\n' "$value"
+            else
+              printf '{}\n'
+            fi
+          }
+
+          json_array_or() {
+            local value
+            value="$(json_or "${1:-}" '[]')"
+            if jq -e 'type == "array"' >/dev/null 2>&1 <<<"$value"; then
+              printf '%s\n' "$value"
+            else
+              printf '[]\n'
+            fi
+          }
+
           gql() {
             local query="$1"
-            local variables="${2:-{}}"
+            local variables
+            variables="$(json_object_or "${2:-}")"
             jq -nc --arg query "$query" --argjson variables "$variables" '{query: $query, variables: $variables}' |
               gh api graphql --input -
           }
@@ -155,7 +186,7 @@ jobs:
 
           FIELD_NAMES=("Status" "Type" "Area" "Priority" "Size" "Agent" "Blocked Reason")
 
-          project_vars="$(jq -nc --arg owner "$ORG" --argjson number "$PROJECT_NUMBER" '{owner: $owner, number: $number}')"
+          project_vars="$(jq -nc --arg owner "$ORG" --arg number "$PROJECT_NUMBER" '{owner: $owner, number: ($number | tonumber)}')"
           project_json="$(
             gql '
               query($owner: String!, $number: Int!) {
@@ -220,20 +251,20 @@ jobs:
                         }
                       }
                     }
-                  }' "$(jq -nc --arg id "$PROJECT_ID" --argjson after "$cursor_json" '{id: $id, after: $after}')"
+                  }' "$(jq -nc --arg id "$PROJECT_ID" --argjson after "$(json_or "$cursor_json" 'null')" '{id: $id, after: $after}')"
               )"
-              out="$(jq -c --argjson out "$out" '$out + (.data.node.fields.nodes // [])' <<<"$page")"
+              out="$(jq -c --argjson out "$(json_array_or "$out")" '$out + (.data.node.fields.nodes // [])' <<<"$page")"
               if [ "$(jq -r '.data.node.fields.pageInfo.hasNextPage' <<<"$page")" != 'true' ]; then
                 break
               fi
-              cursor_json="$(jq -c '.data.node.fields.pageInfo.endCursor' <<<"$page")"
+              cursor_json="$(json_or "$(jq -c '.data.node.fields.pageInfo.endCursor // null' <<<"$page")" 'null')"
             done
             printf '%s\n' "$out"
           }
 
           find_field() {
             local name="$1"
-            jq -c --arg name "$name" --argjson desired "$DESIRED_FIELDS" '
+            jq -c --arg name "$name" --argjson desired "$(json_object_or "$DESIRED_FIELDS")" '
               ($desired[$name].aliases // []) as $aliases |
               ([$name] + $aliases | map(ascii_downcase)) as $names |
               ([.[] as $f | select($f.name == $name) | $f][0]) //
@@ -245,7 +276,7 @@ jobs:
           make_options() {
             local name="$1"
             local existing="${2:-null}"
-            jq -c --arg name "$name" --argjson existing "$existing" '
+            jq -c --arg name "$name" --argjson existing "$(json_or "$existing" 'null')" '
               .[$name].options | map(. as $desired |
                 ([$desired.name] + ($desired.aliases // []) | map(ascii_downcase)) as $names |
                 ([($existing.options // [])[]? as $option | select($names | index($option.name | ascii_downcase)) | $option][0]) as $match |
@@ -258,6 +289,7 @@ jobs:
           create_field() {
             local name="$1"
             local options="$2"
+            options="$(json_array_or "$options")"
             gql '
               mutation($projectId: ID!, $name: String!, $options: [ProjectV2SingleSelectFieldOptionInput!]) {
                 createProjectV2Field(input: {
@@ -277,6 +309,7 @@ jobs:
             local field_id="$1"
             local name="$2"
             local options="$3"
+            options="$(json_array_or "$options")"
             gql '
               mutation($fieldId: ID!, $name: String!, $options: [ProjectV2SingleSelectFieldOptionInput!]) {
                 updateProjectV2Field(input: {
@@ -368,13 +401,13 @@ jobs:
                         }
                       }
                     }
-                  }' "$(jq -nc --arg id "$PROJECT_ID" --argjson after "$cursor_json" '{id: $id, after: $after}')"
+                  }' "$(jq -nc --arg id "$PROJECT_ID" --argjson after "$(json_or "$cursor_json" 'null')" '{id: $id, after: $after}')"
               )"
-              out="$(jq -c --argjson out "$out" '$out + (.data.node.views.nodes // [])' <<<"$page")"
+              out="$(jq -c --argjson out "$(json_array_or "$out")" '$out + (.data.node.views.nodes // [])' <<<"$page")"
               if [ "$(jq -r '.data.node.views.pageInfo.hasNextPage' <<<"$page")" != 'true' ]; then
                 break
               fi
-              cursor_json="$(jq -c '.data.node.views.pageInfo.endCursor' <<<"$page")"
+              cursor_json="$(json_or "$(jq -c '.data.node.views.pageInfo.endCursor // null' <<<"$page")" 'null')"
             done
             printf '%s\n' "$out"
           }
@@ -492,7 +525,7 @@ jobs:
                           nodes { id url }
                         }
                       }
-                    }' "$(jq -nc --arg org "$ORG" --arg repo "$repo" --argjson after "$cursor_json" '{org: $org, repo: $repo, after: $after}')"
+                    }' "$(jq -nc --arg org "$ORG" --arg repo "$repo" --argjson after "$(json_or "$cursor_json" 'null')" '{org: $org, repo: $repo, after: $after}')"
                 )"
                 while IFS=$'\t' read -r id url; do
                   [ -n "$id" ] || continue
@@ -501,7 +534,7 @@ jobs:
                 if [ "$(jq -r '.data.repository.issues.pageInfo.hasNextPage' <<<"$json")" != 'true' ]; then
                   break
                 fi
-                cursor_json="$(jq -c '.data.repository.issues.pageInfo.endCursor' <<<"$json")"
+                cursor_json="$(json_or "$(jq -c '.data.repository.issues.pageInfo.endCursor // null' <<<"$json")" 'null')"
               else
                 json="$(
                   gql '
@@ -512,7 +545,7 @@ jobs:
                           nodes { id url }
                         }
                       }
-                    }' "$(jq -nc --arg org "$ORG" --arg repo "$repo" --argjson after "$cursor_json" '{org: $org, repo: $repo, after: $after}')"
+                    }' "$(jq -nc --arg org "$ORG" --arg repo "$repo" --argjson after "$(json_or "$cursor_json" 'null')" '{org: $org, repo: $repo, after: $after}')"
                 )"
                 while IFS=$'\t' read -r id url; do
                   [ -n "$id" ] || continue
@@ -521,7 +554,7 @@ jobs:
                 if [ "$(jq -r '.data.repository.pullRequests.pageInfo.hasNextPage' <<<"$json")" != 'true' ]; then
                   break
                 fi
-                cursor_json="$(jq -c '.data.repository.pullRequests.pageInfo.endCursor' <<<"$json")"
+                cursor_json="$(json_or "$(jq -c '.data.repository.pullRequests.pageInfo.endCursor // null' <<<"$json")" 'null')"
               fi
             done
           }
