@@ -7,10 +7,11 @@
 # month across fleet-infra and nix-config for a job averaging 6.6 seconds.
 # Standard runners are free in public repositories, and this repo is public.
 #
-# This does NOT replace repository-hygiene-guard.yml. The guard blocks a
-# merge; this only reports. Removing a repo's blocking gate is a separate,
-# deliberate decision -- see the exclude-repos input below and the tracking
-# issue.
+# This does NOT replace repository-hygiene-guard.yml, but the difference is
+# smaller than it looks: the guard is not a required status check in any repo
+# in this org. Only 'Pipeline Complete' is. So the guard already only reports
+# -- a hygiene failure has never blocked a merge here. Verified by reading the
+# rulesets directly rather than assuming from the workflow's name.
 name: 'Org Hygiene Sweep'
 
 'on':
@@ -37,9 +38,9 @@ jobs:
   sweep:
     uses: 'JorisJonkers-dev/github-workflows/.github/workflows/repository-hygiene-sweep.yml@main'
     with:
-      # Repos that still run the blocking guard on every PR. Listing them here
-      # keeps the sweep from reporting the same thing twice. Remove a name
-      # from this list in the same change that removes its blocking gate.
+      # Repos that still run the per-PR guard. Listing them here keeps the
+      # sweep from reporting the same thing twice. Remove a name from this
+      # list in the same change that removes its per-PR workflow.
       exclude-repos: |
         fleet-infra
         nix-config
