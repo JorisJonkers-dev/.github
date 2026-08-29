@@ -1,0 +1,48 @@
+# Boards every open issue and pull request across the organization, on a
+# schedule, from a public repository.
+#
+# Why here rather than in each repo: Actions minutes are billed to the caller,
+# never to the repo holding the reusable workflow. The per-repo 'uses:' shims
+# already point at github-workflows and that saves nothing -- a private repo
+# firing the event pays for the run. Standard runners are free in public
+# repositories, and this repo is public, so every sweep run costs nothing.
+#
+# That is also why the cron can be this frequent. There is no minute budget to
+# ration, only GitHub's own scheduling latency.
+#
+# Second reason this exists: when GitHub stops creating runs from webhook
+# events -- which has happened in this estate, stranding 24 issues at once --
+# the event-driven path silently stops boarding anything. A sweep keeps
+# working, because it is not waiting on a webhook.
+name: 'Org Project Sweep'
+
+'on':
+  schedule:
+    # Every 15 minutes. Free, so the only cost of frequency is GitHub's own
+    # scheduler delay under load.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      project-url:
+        description: 'Organization Project URL.'
+        required: false
+        type: string
+        default: 'https://github.com/orgs/JorisJonkers-dev/projects/2'
+
+permissions:
+  contents: 'read'
+
+concurrency:
+  # A slow sweep must not stack up behind the next tick.
+  group: 'org-project-sweep'
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/add-to-project.yml@main'
+    with:
+      scope: 'org'
+      project-url: "${{ inputs.project-url || 'https://github.com/orgs/JorisJonkers-dev/projects/2' }}"
+    secrets:
+      PROJECT_AUTOMATION_APP_ID: '${{ secrets.RELEASE_APP_ID }}'
+      PROJECT_AUTOMATION_APP_PRIVATE_KEY: '${{ secrets.RELEASE_APP_PRIVATE_KEY }}'
