@@ -1,0 +1,50 @@
+# Advisory hygiene sweep over every open pull request in the organization,
+# scheduled, from a public repository.
+#
+# Why here: Actions minutes are billed to the caller, never to the repo
+# holding the reusable workflow. The blocking guard runs in the repo being
+# checked, so each private repo firing it pays for the run -- ~292 minutes a
+# month across fleet-infra and nix-config for a job averaging 6.6 seconds.
+# Standard runners are free in public repositories, and this repo is public.
+#
+# This does NOT replace repository-hygiene-guard.yml, but the difference is
+# smaller than it looks: the guard is not a required status check in any repo
+# in this org. Only 'Pipeline Complete' is. So the guard already only reports
+# -- a hygiene failure has never blocked a merge here. Verified by reading the
+# rulesets directly rather than assuming from the workflow's name.
+name: 'Org Hygiene Sweep'
+
+'on':
+  schedule:
+    # Every 6 hours. Advisory, so there is nothing to gain from reacting
+    # within minutes; a red sweep and a sticky PR comment are the signal.
+    - cron: '25 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      comment:
+        description: 'Post sticky comments on offending pull requests.'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: 'read'
+
+concurrency:
+  group: 'org-hygiene-sweep'
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/repository-hygiene-sweep.yml@main'
+    with:
+      # Repos that still run the per-PR guard. Listing them here keeps the
+      # sweep from reporting the same thing twice. Remove a name from this
+      # list in the same change that removes its per-PR workflow.
+      exclude-repos: |
+        fleet-infra
+        nix-config
+      comment: "${{ inputs.comment == null && true || inputs.comment }}"
+    secrets:
+      HYGIENE_APP_ID: '${{ secrets.RELEASE_APP_ID }}'
+      HYGIENE_APP_PRIVATE_KEY: '${{ secrets.RELEASE_APP_PRIVATE_KEY }}'
