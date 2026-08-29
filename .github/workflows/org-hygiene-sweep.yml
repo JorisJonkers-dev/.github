@@ -38,12 +38,10 @@ jobs:
   sweep:
     uses: 'JorisJonkers-dev/github-workflows/.github/workflows/repository-hygiene-sweep.yml@main'
     with:
-      # Repos that still run the per-PR guard. Listing them here keeps the
-      # sweep from reporting the same thing twice. Remove a name from this
-      # list in the same change that removes its per-PR workflow.
-      exclude-repos: |
-        fleet-infra
-        nix-config
+      # No exclusions: fleet-infra and nix-config dropped their per-PR guards,
+      # so the sweep is now their only hygiene coverage. Anything listed here
+      # is a repo the sweep does not look at -- only exclude one that still
+      # runs the per-PR workflow, or it silently goes unchecked.
       comment: "${{ inputs.comment == null && true || inputs.comment }}"
     secrets:
       HYGIENE_APP_ID: '${{ secrets.RELEASE_APP_ID }}'
