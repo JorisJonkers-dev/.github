@@ -1,0 +1,67 @@
+# Watches the org's Actions minute budget and raises an alert before it runs
+# out, from a public repository.
+#
+# Why here: standard runners are free in public repositories, so the watchdog
+# never consumes the budget it is watching. That matters more than usual for
+# this one -- a watchdog that costs private minutes would be adding to the
+# problem precisely when the problem is worst.
+#
+# The estate ran out of minutes mid-working-session with no warning: every
+# private repo went dark, runs allocated no runner and failed within seconds
+# with zero steps executed, which reads as broken code rather than an
+# exhausted budget. This exists so that does not happen unannounced again.
+#
+# On cadence: GitHub throttles scheduled runs hard in this org, measured at
+# four to seven runs per repo per day regardless of the declared cron (see the
+# tracking issue on the org sweeps). For a budget check that is ample -- a
+# handful of checks a day catches a threshold crossing long before the cap.
+# It does mean this cannot promise to warn within minutes, and it should not
+# be described as if it could.
+name: 'Actions Budget Watchdog'
+
+'on':
+  schedule:
+    # Four times a day, at an offset minute. Not on the hour: GitHub
+    # deprioritises the congested boundaries first, and every schedule in this
+    # estate that fires reliably sits off them.
+    - cron: '41 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      allowance-minutes:
+        description: 'Included standard-runner minutes per month (GitHub Team is 3000).'
+        required: false
+        type: number
+        default: 3000
+      warn-percent:
+        description: 'Warn at or above this percentage of the allowance.'
+        required: false
+        type: number
+        default: 70
+      critical-percent:
+        description: 'Fail and raise the alert at or above this percentage.'
+        required: false
+        type: number
+        default: 85
+
+permissions:
+  contents: 'read'
+
+concurrency:
+  group: 'actions-budget-watchdog'
+  cancel-in-progress: false
+
+jobs:
+  budget:
+    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/actions-budget-watchdog.yml@main'
+    with:
+      allowance-minutes: "${{ inputs.allowance-minutes || 3000 }}"
+      warn-percent: "${{ inputs.warn-percent || 70 }}"
+      critical-percent: "${{ inputs.critical-percent || 85 }}"
+      # The alert lands here rather than in the offending repo: the budget is
+      # an org-level fact, and when it is exhausted the private repos are
+      # exactly the ones that cannot run anything.
+      alert-repo: 'JorisJonkers-dev/.github'
+      alert-labels: 'type: chore,component: ci,area: tooling,priority: P1,owner-action'
+    secrets:
+      BUDGET_APP_ID: '${{ secrets.RELEASE_APP_ID }}'
+      BUDGET_APP_PRIVATE_KEY: '${{ secrets.RELEASE_APP_PRIVATE_KEY }}'
