@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/JorisJonkers-dev/.github/compare/v0.2.4...v0.3.0) (2026-08-29)
+
+
+### Features
+
+* **budget:** schedule the Actions budget watchdog from a public runner ([#43](https://github.com/JorisJonkers-dev/.github/issues/43)) ([f8703f4](https://github.com/JorisJonkers-dev/.github/commit/f8703f45200fd5543489969b94f3e09594bb8f89))
+* **hygiene:** schedule the advisory org hygiene sweep from a public runner ([#37](https://github.com/JorisJonkers-dev/.github/issues/37)) ([1c18fa1](https://github.com/JorisJonkers-dev/.github/commit/1c18fa1d23a18959ed200fea13637a6d4b824f6d))
+* **project:** sweep the whole org onto the board from a public runner ([#36](https://github.com/JorisJonkers-dev/.github/issues/36)) ([93bb5e0](https://github.com/JorisJonkers-dev/.github/commit/93bb5e0b44cb766f10d433231897de7223b9ae80)), closes [#33](https://github.com/JorisJonkers-dev/.github/issues/33)
+
+
+### Bug Fixes
+
+* **budget:** pass the watchdog thresholds as numbers, not expressions ([#44](https://github.com/JorisJonkers-dev/.github/issues/44)) ([f186e15](https://github.com/JorisJonkers-dev/.github/commit/f186e1500911749b9ede1bf9460276a094cb7dd7))
+
 ## [0.2.4](https://github.com/JorisJonkers-dev/.github/compare/v0.2.3...v0.2.4) (2026-06-29)
 
 
