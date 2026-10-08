@@ -39,7 +39,7 @@ concurrency:
 
 jobs:
   sweep:
-    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/add-to-project.yml@main'
+    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/add-to-project.yml@16cd68adc1775580f5311dafa00dd4310af45c49' # main
     with:
       scope: 'org'
       project-url: "${{ inputs.project-url || 'https://github.com/orgs/JorisJonkers-dev/projects/2' }}"

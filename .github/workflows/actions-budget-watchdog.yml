@@ -41,7 +41,7 @@ concurrency:
 
 jobs:
   budget:
-    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/actions-budget-watchdog.yml@main'
+    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/actions-budget-watchdog.yml@16cd68adc1775580f5311dafa00dd4310af45c49' # main
     with:
       # Literal numbers, not interpolated expressions: these inputs are
       # `type: number` on the callee.
