@@ -10,7 +10,7 @@ Source-available — © Joris Jonkers Both. All rights reserved.
 - **github-workflows** · **gradle-conventions** · **openapi-client-gradle** · **repo-template** — shared CI & scaffolding
 
 ### Libraries
-- **kotlin-spring-commons** · **vue-web-commons** · **authz-model** · **api-contract-checks**
+- **kotlin-spring-commons** · **vue-web-commons** · **go-commons** · **python-commons** · **rust-commons** · **api-contract-checks**
 
 ### Apps
 - **agents-api** · **agents-ui** — agent platform
