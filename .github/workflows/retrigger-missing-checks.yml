@@ -1,0 +1,35 @@
+# Reopens open pull requests whose head commit never got a required status check, so a
+# ruleset's "Expected — Waiting for status to be reported" cannot last. The logic, its guards
+# (once per head commit, commits at least 30 minutes old, no drafts, bot authors or conflicted
+# pull requests) and its tests live in github-workflows' retrigger-missing-checks.yml.
+#
+# Here, because this repository is public: standard runners are free, and the run looks at every
+# repository of the organization with the App token.
+name: 'Retrigger Missing Required Checks'
+
+'on':
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Print what would be reopened, and reopen nothing.'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: 'read'
+
+concurrency:
+  group: 'retrigger-missing-checks'
+  cancel-in-progress: false
+
+jobs:
+  retrigger:
+    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/retrigger-missing-checks.yml@2fc6ef8b369d3c7c30b26256a98dcdf75a112d29' # v0.49.0
+    with:
+      dry-run: ${{ inputs.dry-run == true }}
+    secrets:
+      HYGIENE_APP_ID: '${{ secrets.RELEASE_APP_ID }}'
+      HYGIENE_APP_PRIVATE_KEY: '${{ secrets.RELEASE_APP_PRIVATE_KEY }}'
