@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   retrigger:
-    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/retrigger-missing-checks.yml@2fc6ef8b369d3c7c30b26256a98dcdf75a112d29' # v0.49.0
+    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/retrigger-missing-checks.yml@8aaf024208bf4b29acb468aecd3cd7ee130d5ac1' # v0.49.1
     with:
       dry-run: ${{ inputs.dry-run == true }}
     secrets:
