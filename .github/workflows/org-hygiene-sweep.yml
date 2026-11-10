@@ -7,11 +7,11 @@
 # month across fleet-infra and nix-config for a job averaging 6.6 seconds.
 # Standard runners are free in public repositories, and this repo is public.
 #
-# This does NOT replace repository-hygiene-guard.yml, but the difference is
-# smaller than it looks: the guard is not a required status check in any repo
-# in this org. Only 'Pipeline Complete' is. So the guard already only reports
-# -- a hygiene failure has never blocked a merge here. Verified by reading the
-# rulesets directly rather than assuming from the workflow's name.
+# This does NOT replace repository-hygiene-guard.yml. Since github-workflows
+# v0.46.0, 'repository-hygiene / Agent Attribution Guard' is a required status
+# check in most repositories, beside 'Pipeline Complete', so the per-PR guard
+# blocks merges; this sweep only reports. retrigger-missing-checks.yml reopens
+# pull requests whose required checks never reported.
 name: 'Org Hygiene Sweep'
 
 'on':
