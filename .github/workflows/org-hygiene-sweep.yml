@@ -36,7 +36,7 @@ concurrency:
 
 jobs:
   sweep:
-    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/repository-hygiene-sweep.yml@48fcba8b143567e12716f4b77b9a3ab211719ffd # v0.50.1' # main
+    uses: 'JorisJonkers-dev/github-workflows/.github/workflows/repository-hygiene-sweep.yml@48fcba8b143567e12716f4b77b9a3ab211719ffd' # v0.50.1 # main
     with:
       # No exclusions: fleet-infra and nix-config dropped their per-PR guards,
       # so the sweep is now their only hygiene coverage. Anything listed here
